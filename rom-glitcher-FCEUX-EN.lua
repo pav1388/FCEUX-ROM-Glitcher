@@ -6,7 +6,7 @@
 -- https://www.emu-land.net/forum/index.php/topic,88982.msg1666909.html#msg1666909
 
 -- ============================================================
-local SCRIPT_VERSION = "0.2.1" -- "xx.xx.xxxx"
+local SCRIPT_VERSION = "0.2.1" -- "2026.04.16"
 local FCEUX_MIN_VERSION = "2.2.3"
 local SAVE_MOD_PATH = ""  -- Путь для сохранения модифицированных ROM-файлов ("C:\\mod-roms")
 local DEBUG_MODE = false  -- Вывод отладочной информации в log-файл
@@ -808,7 +808,7 @@ function config_save()
         return false
     end
     
-    file:write("# ROM Glitcher v" .. SCRIPT_VERSION .. " FCEUX - Config file\n")
+    file:write("# FCEUX ROM Glitcher v" .. SCRIPT_VERSION .. " - Config file\n")
     file:write("\n")
     
     local types = collect_instruction_types()
@@ -1043,7 +1043,7 @@ function new_search()
         return false
     end
     
-    -- Проверяем сигнатуру NES
+    -- Проверяем сигнатуру NES (NES\x1A)
     if rom_read_byte(0) ~= 0x4E or rom_read_byte(1) ~= 0x45 or 
        rom_read_byte(2) ~= 0x53 or rom_read_byte(3) ~= 0x1A then
         print_error("Invalid NES signature")
