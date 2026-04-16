@@ -6,7 +6,7 @@
 -- https://www.emu-land.net/forum/index.php/topic,88982.msg1666909.html#msg1666909
 
 -- ============================================================
-local SCRIPT_VERSION = "0.2.0" -- "10.12.2025"
+local SCRIPT_VERSION = "0.2.1" -- "xx.xx.xxxx"
 local FCEUX_MIN_VERSION = "2.2.3"
 local SAVE_MOD_PATH = ""  -- Путь для сохранения модифицированных ROM-файлов ("C:\\mod-roms")
 local DEBUG_MODE = false  -- Вывод отладочной информации в log-файл

@@ -1,12 +1,12 @@
 -- ROM Glitcher: Instruction Inverter для FCEUX
 -- Алгоритм поиска глитчей через инвертирование инструкций ветвления
--- 
+--
 -- Автор идеи и оригинальной C-программы: Беларус учит русский (aka perfect_genius)
 -- Lua-реализация: pav13 
 -- https://www.emu-land.net/forum/index.php/topic,88982.msg1666909.html#msg1666909
 
 -- ============================================================
-local SCRIPT_VERSION = "0.2.0" -- 10.12.2025
+local SCRIPT_VERSION = "0.2.1" -- "xx.xx.xxxx"
 local FCEUX_MIN_VERSION = "2.2.3"
 local SAVE_MOD_PATH = ""  -- Путь для сохранения модифицированных ROM-файлов ("C:\\mod-roms")
 local DEBUG_MODE = false  -- Вывод отладочной информации в log-файл
@@ -14,20 +14,20 @@ local RANDOM_SEED = true  -- Случайный сид при перемешив
 
 -- ==================== КЛАВИШИ УПРАВЛЕНИЯ ====================
 local KEYS = {
-    -- KEY_N = {value = "клавиша", desc_search = "в меню поиска", desc_select = "в меню выбора"}
-    KEY_1 = { value = "Z", desc_search = "Шаг 1 (Баг мешает)", 
-                            desc_select = "Курсор вверх" },
-    KEY_2 = { value = "X", desc_search = "Шаг 2 (Нет изменения)", 
-                            desc_select = "Подтверждение выбора" },
-    KEY_3 = { value = "C", desc_search = "Шаг 3 (Есть изменение)", 
-                            desc_select = "Курсор вниз" },
-    KEY_4 = { value = "V", desc_search = "Отменить шаг", 
-                            desc_select = "Выбрать/Снять все" },
-    KEY_5 = { value = "B", desc_search = "Шаг до локализации", 
-                            desc_select = "Вернуться назад" },
-    KEY_6 = { value = "N", desc_search = "Завершить текущий поиск", 
-                            desc_select = "Начать новый поиск" },
-    KEY_7 = { value = "M", desc_search = "Сохранить модифицированный ROM", 
+    -- KEY_N = {value = "key", desc_search = "in the search menu", desc_select = "in the selection menu"}
+    KEY_1 = { value = "Z", desc_search = "Step 1 (Bug interferes)", 
+                            desc_select = "Cursor up" },
+    KEY_2 = { value = "X", desc_search = "Step 2 (No change)", 
+                            desc_select = "Confirm selection" },
+    KEY_3 = { value = "C", desc_search = "Step 3 (Change detected)", 
+                            desc_select = "Cursor down" },
+    KEY_4 = { value = "V", desc_search = "Undo step", 
+                            desc_select = "Select/Deselect all" },
+    KEY_5 = { value = "B", desc_search = "Step before localization", 
+                            desc_select = "Go back" },
+    KEY_6 = { value = "N", desc_search = "Finish current search", 
+                            desc_select = "Start new search" },
+    KEY_7 = { value = "M", desc_search = "Save modified ROM", 
                             desc_select = "" }
 }
 
@@ -591,13 +591,13 @@ end
 -- Вывод сообщения об ошибке
 function print_error(msg)
     print_separator()
-    print_line(string.format("   [ОШИБКА: %s!]", msg))
+    print_line(string.format("   [ERROR: %s!]", msg))
 end
 
 -- Вывод сообщения о выбранном действии
 function print_action(msg)
     print_separator()
-    print_line(string.format("   [Действие: %s]", msg))
+    print_line(string.format("   [ACTION: %s]", msg))
 end
 
 -- Начальное меню
@@ -628,7 +628,7 @@ function menu_start()
     print_separator()
     print_line("--- ROM Glitcher v" .. SCRIPT_VERSION 
                                 .. " (FCEUX " .. FCEUX_MIN_VERSION .. "+) ---")
-    print_line(" Определена версия: " .. (qt_version and "Qt" or "Не Qt"))
+    print_line(" Version detected: " .. (qt_version and "Qt" or "Not-Qt"))
     print_line("")
     
     local all_instructions = {}
@@ -639,11 +639,11 @@ function menu_start()
     end
     table.sort(all_instructions)
     
-    print_line("Доступные инструкции:")
+    print_line("Available instructions:")
     print_line("  " .. table.concat(all_instructions, ", "))
     print_line("")
     
-    print_line("Выбранные инструкции:")
+    print_line("Selected instructions:")
     if next(active_instr_groups) ~= nil then
         local selected_instructions = {}
         for _, data in pairs(instr_table) do
@@ -655,23 +655,23 @@ function menu_start()
         if #selected_instructions > 0 then
             print_line("  " .. table.concat(selected_instructions, ", "))
         else
-            print_line("  (ничего не выбрано)")
+            print_line("  (nothing selected)")
         end
     else
-        print_line("  (ничего не выбрано)")
+        print_line("  (nothing selected)")
     end
     
     print_line("")
-    print_line("1. Загрузите ROM")
-    print_line(" 2. Нажмите [" .. KEYS.KEY_5.value .. "] для выбора инструкций")
-    print_line("  3. Дойдите до нужного места (загрузите свое сохранение)")
-    print_line("   4. Нажмите [" .. KEYS.KEY_6.value .. "] для начала поиска")
+    print_line("1. Load ROM")
+    print_line(" 2. Press [" .. KEYS.KEY_5.value .. "] to select instructions")
+    print_line("  3. Reach the desired location (load your save state)")
+    print_line("   4. Press [" .. KEYS.KEY_6.value .. "] to start search")
 end
 
 -- Меню выбора инструкций
 function menu_select()
     print_separator()
-    print_line("--- ВЫБОР ИНСТРУКЦИЙ ---")
+    print_line("--- INSTRUCTION SELECTION ---")
     print_line("")
     
     local types = collect_instruction_types()
@@ -697,7 +697,7 @@ function menu_select()
     end
     
     print_line("")
-    print_line("УПРАВЛЕНИЕ:")
+    print_line("CONTROLS:")
     print_line(" [" .. KEYS.KEY_1.value .. "] - " .. KEYS.KEY_1.desc_select)
     print_line("  [" .. KEYS.KEY_2.value .. "] - " .. KEYS.KEY_2.desc_select)
     print_line("   [" .. KEYS.KEY_3.value .. "] - " .. KEYS.KEY_3.desc_select)
@@ -709,14 +709,14 @@ end
 -- Меню поиска
 function menu_search()
     print_separator()
-    print_line("--- СТАТУС ПОИСКА ---")
-    print_line("Инструкций осталось: " .. #cur_state.instructions)
-    print_line("Шаг: " .. cur_state.step .. (cur_state.search_localizing and " | ЛОКАЛИЗАЦИЯ" or ""))
-    print_line("Окно: " .. cur_state.window_start .. "-" .. 
+    print_line("--- SEARCH STATUS ---")
+    print_line("Instructions left: " .. #cur_state.instructions)
+    print_line("Step: " .. cur_state.step .. (cur_state.search_localizing and " | LOCALIZATION" or ""))
+    print_line("Window: " .. cur_state.window_start .. "-" .. 
         math.min(cur_state.window_start + cur_state.window_size, #cur_state.instructions) .. 
-        " | Размер: " .. cur_state.window_size)
+        " | Size: " .. cur_state.window_size)
     print_line("")
-    print_line("УПРАВЛЕНИЕ:")
+    print_line("CONTROLS:")
     print_line(" [" .. KEYS.KEY_1.value .. "] - " .. KEYS.KEY_1.desc_search)
     print_line("  [" .. KEYS.KEY_2.value .. "] - " .. KEYS.KEY_2.desc_search)
     print_line("   [" .. KEYS.KEY_3.value .. "] - " .. KEYS.KEY_3.desc_search)
@@ -735,7 +735,7 @@ function menu_end_search()
     print_separator()
     print_line(" [" .. KEYS.KEY_6.value .. "] - " .. KEYS.KEY_6.desc_select)
     if has_search_state(pre_local_state) then
-        print_line("  [" .. KEYS.KEY_5.value .. "] - Продолжить с " .. KEYS.KEY_5.desc_search)
+        print_line("  [" .. KEYS.KEY_5.value .. "] - Continue with " .. KEYS.KEY_5.desc_search)
     end
     if cur_state.search_done and not cur_state.search_fail then
         print_line("   [" .. KEYS.KEY_7.value .. "] - " .. KEYS.KEY_7.desc_search)
@@ -813,11 +813,11 @@ function config_save()
     
     local types = collect_instruction_types()
     if #types > 0 then
-        file:write("# Доступные группы: " .. table.concat(types, ", ") .. "\n")
+        file:write("# Available groups: " .. table.concat(types, ", ") .. "\n")
     else
-        file:write("# Доступные группы: НЕТ\n")
+        file:write("# Available groups: NONE\n")
     end
-    file:write("# Выбранные группы инструкции для поиска (разделитель ,)\n")
+    file:write("# Selected instruction groups for search (separator ,)\n")
     if next(active_instr_groups) == nil then
         file:write("instruction_groups=none\n")
     else
@@ -830,11 +830,11 @@ function config_save()
     end
     file:write("\n")
     
-    file:write("# Путь для сохранения модифицированного ROM\n")
+    file:write("# Path to save modified ROM\n")
     file:write(string.format("save_mod_path=%s\n", SAVE_MOD_PATH))
     file:write("\n")
     
-    file:write("# Назначения клавиш управления\n")
+    file:write("# Control key bindings\n")
     local key_mapping = create_key_mapping()
     local sorted_keys = {}
     
@@ -851,7 +851,7 @@ function config_save()
     end
     file:write("\n")
     
-    file:write("# Доступные клавиши:\n")
+    file:write("# Available keys:\n")
     file:write("#    leftclick, rightclick, middleclick, capslock, numlock, scrolllock,\n")
     file:write("#    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,\n")
     file:write("#    A, B, C, ..., Y, Z,\n")
@@ -864,13 +864,13 @@ function config_save()
     file:write("#    comma, period, slash, backslash, tilde, quote, leftbracket, rightbracket.\n")
     file:write("\n")
     
-    file:write("# Начальный размер окна (1/16 от всех инструкций)\n")
+    file:write("# Initial window size (1/16 of all instructions)\n")
     file:write(string.format("start_length_div=%d\n", START_LENGTH_DIV))
     file:write("\n")
-    file:write("# Случайный сид для перемешивания инструкций (0=false, 1=true)\n")
+    file:write("# Random seed for shuffling instructions (0=false, 1=true)\n")
     file:write(string.format("random_seed=%d\n", RANDOM_SEED and 1 or 0))
     file:write("\n")
-    file:write("# Режим отладки (0=false, 1=true)\n")
+    file:write("# Debug mode (0=false, 1=true)\n")
     file:write(string.format("debug_mode=%d\n", DEBUG_MODE and 1 or 0))
     file:write("\n")
     
@@ -907,7 +907,7 @@ function config_load()
         update_active_instructions()
         
         if config_save() then
-            print_line("Файл конфигурации создан в папке со скриптом: " .. CONFIG_FILE)
+            print_line("Configuration file created in script folder: " .. CONFIG_FILE)
             success, file = pcall(io.open, CONFIG_FILE, "r")
 			if not success or not file then
 				debug_log("FAILED config_load: again not success or not file")
@@ -1035,18 +1035,18 @@ end
 -- Начало нового поиска
 function new_search()
     print_separator()
-    print_line("--- НОВЫЙ ПОИСК ---")
+    print_line("--- NEW SEARCH ---")
     
     if not emu.emulating() then
         debug_log("FAILED new_search: emulation not active")
-		print_error("Эмуляция не активна")
+		print_error("Emulation not active")
         return false
     end
     
     -- Проверяем сигнатуру NES
     if rom_read_byte(0) ~= 0x4E or rom_read_byte(1) ~= 0x45 or 
        rom_read_byte(2) ~= 0x53 or rom_read_byte(3) ~= 0x1A then
-        print_error("Неверная сигнатура NES")
+        print_error("Invalid NES signature")
         return false
     end
     
@@ -1062,19 +1062,19 @@ function new_search()
     
     print_line("ROM: " .. rom_filename)
     print_line("Hash MD5: " .. rom_hash)
-    print_line(string.format("Размер: %d Кб (%d байт)", rom_size / 1024, rom_size))
-    print_line("Seed: " .. (RANDOM_SEED and "случайный" or "постоянный"))
+    print_line(string.format("Size: %d KB (%d bytes)", rom_size / 1024, rom_size))
+    print_line("Seed: " .. (RANDOM_SEED and "random" or "constant"))
     
     
     if create_rom_backup() then
-        print_line("Backup ROM: создан")
+        print_line("Backup ROM: created")
     else
-        print_line("Backup ROM: ОШИБКА!")
+        print_line("Backup ROM: ERROR!")
     end
     if savestate_save() then
-        print_line("Savestate: сохранен")
+        print_line("Savestate: saved")
     else
-        print_line("Savestate: ОШИБКА!")
+        print_line("Savestate: ERROR!")
     end
     
     update_active_instructions()
@@ -1085,17 +1085,17 @@ function new_search()
             table.insert(selected, type_name:upper())
         end
         table.sort(selected)
-        print_line("Выбранные типы инструкций: " .. table.concat(selected, ", "))
+        print_line("Selected instruction types: " .. table.concat(selected, ", "))
     else
-        print_error("Не выбрано ни одной группы инструкций")
+        print_error("No instruction groups selected")
         return false
     end
     
     -- Ищем инструкции
     if find_instructions() then
-        print_line("Найдено инструкций: " .. #cur_state.instructions)
+        print_line("Instructions found: " .. #cur_state.instructions)
     else
-        print_error("Инструкции не найдены")
+        print_error("No instructions found")
         return false
     end
 	
@@ -1160,7 +1160,7 @@ end
 function restore_rom_backup()
 	debug_log("restore_rom_backup: start")
     if not rom_backup or type(rom_backup) ~= "table" or not next(rom_backup) then
-        print_error("Backup ROM не найден")
+        print_error("Backup ROM not found")
         return false
     end
     
@@ -1175,12 +1175,12 @@ end
 function save_mod_rom()
 	debug_log("restore_rom_backup: start")
     if not has_search_state(cur_state) then 
-        print_error("Нет измененных инструкций")
+        print_error("No modified instructions")
         return false 
     end
     
     if not rom_backup then
-        print_error("Нет резервной копии ROM")
+        print_error("No ROM backup")
         return false
     end
     
@@ -1204,7 +1204,7 @@ function save_mod_rom()
     end
     
     if not first_instr_addr then
-        print_error("Нет адресов для изменения")
+        print_error("No addresses to modify")
         return false
     end
     
@@ -1238,7 +1238,7 @@ function save_mod_rom()
     local save_success, save_error = pcall(function()
         local file, err = io.open(full_path, "wb")
         if not file then
-            error("Не удалось создать файл: " .. full_path .. " - " .. (err or "неизвестная ошибка"))
+            error("Failed to create file: " .. full_path .. " - " .. (err or "unknown error"))
         end
         
         -- Записываем заголовок (первые HEADER_SIZE байт) напрямую из памяти
@@ -1248,7 +1248,7 @@ function save_mod_rom()
                 return file:write(string.char(byte))
             end)
             if not write_success then
-                error("Ошибка записи заголовка: " .. (write_err or "неизвестная ошибка"))
+                error("Error writing header: " .. (write_err or "unknown error"))
             end
         end
         
@@ -1264,7 +1264,7 @@ function save_mod_rom()
                 return file:write(string.char(byte))
             end)
             if not write_success then
-                error("Ошибка записи данных по адресу " .. addr .. ": " .. (write_err or "неизвестная ошибка"))
+                error("Error writing data at address " .. addr .. ": " .. (write_err or "unknown error"))
             end
         end
         
@@ -1278,7 +1278,7 @@ function save_mod_rom()
     end
     
     print_separator()
-    print_line("Сохранен в" .. (SAVE_MOD_PATH == "" and " папке со скриптом: " or ": ") .. full_path)
+    print_line("Saved in" .. (SAVE_MOD_PATH == "" and " script folder: " or ": ") .. full_path)
 	debug_log("restore_rom_backup: end")
     return true
 end
@@ -1401,16 +1401,16 @@ function process_input()
         
         -- Выйти назад в главное меню
         if is_key_released(KEYS.KEY_5.value) then
-            print_action("Вернуться в главное меню")
+            print_action("Return to main menu")
             instr_select_mode = false
             
             -- Обновляем активные инструкции и сохраняем конфигурацию
             if update_active_instructions() then
                 if not config_save() then
-                    print_error("Не удалось сохранить конфигурацию")
+                    print_error("Failed to save configuration")
                 end
             else
-                print_error("Не выбрано ни одной группы")
+                print_error("No group selected")
             end
             menu_start()
             
@@ -1424,12 +1424,12 @@ function process_input()
     if is_key_released(KEYS.KEY_6.value) and cur_state then
         if cur_state.search_active or cur_state.search_done
                 or cur_state.search_fail then
-            print_action("Завершить поиск")
+            print_action("Finish search")
             restore_rom_backup()
             emu_soft_reset()
             menu_start()
         else
-            print_action("Начать поиск")
+            print_action("Start search")
             if not new_search() then
                 menu_start()
             end
@@ -1442,7 +1442,7 @@ function process_input()
     if is_key_released(KEYS.KEY_5.value) and cur_state then
         if not cur_state.search_active and not cur_state.search_done
                 and not cur_state.search_fail then
-            print_action("Выбор инструкций")
+            print_action("Select instructions")
             instr_select_mode = true
             -- instr_select_cursor = 1
             menu_select()
@@ -1500,7 +1500,7 @@ function process_input()
             menu_search()
         else
             print_separator()
-            print_line("   [Поиск завершился неудачей]")
+            print_line("   [Search failed]")
             cur_state.search_active = false
             cur_state.search_fail = true
             menu_end_search()
@@ -1520,7 +1520,7 @@ function process_input()
             menu_search()
         else
             print_separator()
-            print_line("   [Поиск завершился неудачей]")
+            print_line("   [Search failed]")
             cur_state.search_active = false
             cur_state.search_fail = true
             menu_end_search()
@@ -1546,7 +1546,7 @@ function process_input()
                 local old_value = instr[INIT_VAL_INDEX]
                 local new_value = get_inverted_opcode(old_value)
                 print_separator()
-                print_line(string.format(" Найдена инструкция: 0x%06X", addr))
+                print_line(string.format(" Instruction found: 0x%06X", addr))
                 print_line(string.format("  %s (0x%X) -> %s (0x%X)", 
                                     get_opcode_name(old_value), old_value,
                                     get_opcode_name(new_value), new_value))
@@ -1554,7 +1554,7 @@ function process_input()
             end
         else
             print_separator()
-            print_line("   [Поиск завершился неудачей]")
+            print_line("   [Search failed]")
             cur_state.search_active = false
             cur_state.search_fail = true
             menu_end_search()
@@ -1583,7 +1583,7 @@ function end_script()
             emu.softreset()
         end)
         if not success then
-            print_error("Не удалось выполнить Soft reset " .. err)
+            print_error("Failed to perform Soft reset " .. err)
         end
     end
     rom_backup = nil
@@ -1591,7 +1591,7 @@ function end_script()
     collectgarbage("collect")
     total_instructions = 0
     print_separator()
-    print_line("   [Скрипт завершен]")
+    print_line("   [Script finished]")
     emu.registerexit(nil)
 	debug_log("end_script: end")
 end
@@ -1600,14 +1600,14 @@ end
 function main_loop()
     -- Проверка на остановку эмуляции
     if not emu.emulating() then
-        print_error("Эмуляция прервана. Поиск завершен")
+        print_error("Emulation interrupted. Search finished")
         menu_start()
     end
 
     -- Проверка смены ROM-файла каждый N кадр
     if emu.framecount() % 60 == 0 then
         if not check_rom_hash() then
-            print_error("ROM был заменен. Поиск завершен")
+            print_error("ROM was replaced. Search finished")
             menu_start()
         end
     end
