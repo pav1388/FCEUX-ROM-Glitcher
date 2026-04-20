@@ -4,8 +4,8 @@ A tool for casual glitch hunting.
 
 ## Discussion and links
 
-- Discussion on Emuland forum: https://www.emu-land.net/forum/index.php/topic,88982.msg1666909.html#msg1666909
-- FCEUX emulator repository: https://github.com/TASEmulators/fceux
+- [Discussion on Emuland forum](https://www.emu-land.net/forum/index.php/topic,88982.msg1666909.html#msg1666909)
+- [FCEUX emulator repository](https://github.com/TASEmulators/fceux)
 
 ## Description
 
@@ -21,11 +21,12 @@ Instead of manually brute-forcing assembly code, Glitcher does it automatically:
 
 ## Features
 
-- Available in two languages: Russian and English
+- Interface languages: English, Russian, Spanish, Portuguese, German and Italian.
 - Supports FCEUX 2.2.3 and above
 - All changes happen in emulator memory; nothing is written to disk (the ROM file is not modified)
 - Loading and reloading are fully automatic — no need to switch between windows
-- Ability to save a modified ROM
+- Save a modified ROM
+- Available opcodes: AND_EOR, BCC_BCS, BEQ_BNE, BPL_BMI, BVC_BVS, CLC_SEC, CLD_SED, CLI_SEI, INX_DEX, INY_DEY, PHA_PLA, PHP_PLP, ROL_ROR, TAX_TXA, TAY_TYA, TSX_TXS
 
 ## How to use
 
