@@ -6,9 +6,9 @@
 -- https://github.com/pav1388/FCEUX-ROM-Glitcher
 
 -- ============================================================
-local SCRIPT_VERSION = "0.3.0" -- "20.04.2026"
+local SCRIPT_VERSION = "0.3.1" -- "20.04.2026"
 local FCEUX_MIN_VERSION = "2.2.3"
-local LANGUAGE = nil      -- Язык интерфейса ("en", "ru")
+local LANGUAGE = nil      -- Язык интерфейса
 local SAVE_MOD_PATH = ""  -- Путь сохранения модифицированных ROM-файлов ("C:\\mod-roms")
 local DEBUG_MODE = false  -- Вывод отладочной информации в log-файл
 local RANDOM_SEED = true  -- Случайный сид при перемешивании инструкций
@@ -21,7 +21,7 @@ local HEADER_SIZE = 16           -- Размер заголовка в байт�
 local LANG_FILE = "rom-glitcher-FCEUX-lang.lng"
 local LOG_FILE = "rom-glitcher-FCEUX-debug.log"
 local CONFIG_FILE = "rom-glitcher-FCEUX-config.cfg"
-local DEFAULT_GROUP = "BEQ_BNE"  -- Выбранная группа инструкций по-умолчанию
+local DEFAULT_GROUP = "BEQ_BNE"  -- Группа инструкций по-умолчанию
 
 -- ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 local lang_strings = {}            -- Хранилище локализованных строк
@@ -50,6 +50,7 @@ local key_states = {}              -- Таблица состояния клав
 -- Таблица инструкций для поиска
 local instr_table = {
     -- [опкод] = {имя, инвертированное_значение, имя_группы}
+    -- Условные переходы
     [0xF0] = {"BEQ", 0xD0, "BEQ_BNE"},  -- Branch if Equal -> Branch if Not Equal
     [0xD0] = {"BNE", 0xF0, "BEQ_BNE"},  -- Branch if Not Equal -> Branch if Equal
     [0x90] = {"BCC", 0xB0, "BCC_BCS"},  -- Branch if Carry Clear -> Branch if Carry Set
@@ -58,9 +59,39 @@ local instr_table = {
     [0x30] = {"BMI", 0x10, "BPL_BMI"},  -- Branch if MInus -> Branch if PLus
     [0x50] = {"BVC", 0x70, "BVC_BVS"},  -- Branch if oVerflow Clear -> Branch if oVerflow Set
     [0x70] = {"BVS", 0x50, "BVC_BVS"},  -- Branch if oVerflow Set -> Branch if oVerflow Clear
+    -- Флаги
+    [0x18] = {"CLC", 0x38, "CLC_SEC"},  -- CLear Carry -> SEt Carry
+    [0x38] = {"SEC", 0x18, "CLC_SEC"},  -- SEt Carry -> CLear Carry
+    [0x58] = {"CLI", 0x78, "CLI_SEI"},  -- CLear Interrupt -> SEt Interrupt
+    [0x78] = {"SEI", 0x58, "CLI_SEI"},  -- SEt Interrupt -> CLear Interrupt
+    [0xD8] = {"CLD", 0xF8, "CLD_SED"},  -- CLear Decimal -> SEt Decimal
+    [0xF8] = {"SED", 0xD8, "CLD_SED"},  -- SEt Decimal -> CLear Decimal
+    -- Регистровые операции
+    [0xAA] = {"TAX", 0x8A, "TAX_TXA"},  -- Transfer A to X -> Transfer X to A
+    [0x8A] = {"TXA", 0xAA, "TAX_TXA"},  -- Transfer X to A -> Transfer A to X
+    [0xA8] = {"TAY", 0x98, "TAY_TYA"},  -- Transfer A to Y -> Transfer Y to A
+    [0x98] = {"TYA", 0xA8, "TAY_TYA"},  -- Transfer Y to A -> Transfer A to Y
+    [0xBA] = {"TSX", 0x9A, "TSX_TXS"},  -- Transfer Stack pointer to X -> Transfer X to Stack pointer
+    [0x9A] = {"TXS", 0xBA, "TSX_TXS"},  -- Transfer X to Stack pointer -> Transfer Stack pointer to X
+    -- Ротации
+    [0x2A] = {"ROL", 0x6A, "ROL_ROR"},  -- ROtate Left -> ROtate Right
+    [0x6A] = {"ROR", 0x2A, "ROL_ROR"},  -- ROtate Right -> ROtate Left
+    -- Инкремент/декремент (регистры)
+    [0xE8] = {"INX", 0xCA, "INX_DEX"},  -- INcrement X -> DEcrement X
+    [0xCA] = {"DEX", 0xE8, "INX_DEX"},  -- DEcrement X -> INcrement X
+    [0xC8] = {"INY", 0x88, "INY_DEY"},  -- INcrement Y -> DEcrement Y
+    [0x88] = {"DEY", 0xC8, "INY_DEY"},  -- DEcrement Y -> INcrement Y
+    -- Логические операции
+    [0x29] = {"AND", 0x49, "AND_EOR"},  -- AND -> Exclusive OR
+    [0x49] = {"EOR", 0x29, "AND_EOR"},  -- Exclusive OR -> AND
+    -- Операции со стеком
+    [0x48] = {"PHA", 0x68, "PHA_PLA"},  -- PusH Accumulator -> PulL Accumulator
+    [0x68] = {"PLA", 0x48, "PHA_PLA"},  -- PulL Accumulator -> PusH Accumulator
+    [0x08] = {"PHP", 0x28, "PHP_PLP"},  -- PusH Processor status -> PulL Processor status
+    [0x28] = {"PLP", 0x08, "PHP_PLP"},  -- PulL Processor status -> PusH Processor status
 }
 
--- Таблица клавиш управления и описаний действий в меню
+-- Таблица клавиш управления (описаний действий в меню)
 local keys = {
     key_1 = { value = "Z", desc_search = "", desc_select = "" },
     key_2 = { value = "X", desc_search = "", desc_select = "" },
@@ -91,32 +122,45 @@ prev_state = state_template()       -- Предыдущее состояние
 pre_local_state = state_template()  -- Состояние до локализации
 
 -- Таблица преобразования кириллицы ("Ёё" не используются)
-local conversion_table = {
+local conversion_table_cyr = {
     -- [второй байт UTF-8 символа] = байт символа в кодировке WIN1251
-    [0x90] = 0xC0, [0x91] = 0xC1, [0x92] = 0xC2, [0x93] = 0xC3,
-    [0x94] = 0xC4, [0x95] = 0xC5, [0x96] = 0xC6, [0x97] = 0xC7,
-    [0x98] = 0xC8, [0x99] = 0xC9, [0x9A] = 0xCA, [0x9B] = 0xCB,
-    [0x9C] = 0xCC, [0x9D] = 0xCD, [0x9E] = 0xCE, [0x9F] = 0xCF,
-    [0xA0] = 0xD0, [0xA1] = 0xD1, [0xA2] = 0xD2, [0xA3] = 0xD3,
-    [0xA4] = 0xD4, [0xA5] = 0xD5, [0xA6] = 0xD6, [0xA7] = 0xD7,
-    [0xA8] = 0xD8, [0xA9] = 0xD9, [0xAA] = 0xDA, [0xAB] = 0xDB,
-    [0xAC] = 0xDC, [0xAD] = 0xDD, [0xAE] = 0xDE, [0xAF] = 0xDF,
-    [0xB0] = 0xE0, [0xB1] = 0xE1, [0xB2] = 0xE2, [0xB3] = 0xE3,
-    [0xB4] = 0xE4, [0xB5] = 0xE5, [0xB6] = 0xE6, [0xB7] = 0xE7,
-    [0xB8] = 0xE8, [0xB9] = 0xE9, [0xBA] = 0xEA, [0xBB] = 0xEB,
-    [0xBC] = 0xEC, [0xBD] = 0xED, [0xBE] = 0xEE, [0xBF] = 0xEF,
-    [0x80] = 0xF0, [0x81] = 0xF1, [0x82] = 0xF2, [0x83] = 0xF3,
-    [0x84] = 0xF4, [0x85] = 0xF5, [0x86] = 0xF6, [0x87] = 0xF7,
-    [0x88] = 0xF8, [0x89] = 0xF9, [0x8A] = 0xFA, [0x8B] = 0xFB,
+    [0x90] = 0xC0, [0x91] = 0xC1, [0x92] = 0xC2, [0x93] = 0xC3, [0x94] = 0xC4,
+    [0x95] = 0xC5, [0x96] = 0xC6, [0x97] = 0xC7, [0x98] = 0xC8, [0x99] = 0xC9,
+    [0x9A] = 0xCA, [0x9B] = 0xCB, [0x9C] = 0xCC, [0x9D] = 0xCD, [0x9E] = 0xCE,
+    [0x9F] = 0xCF, [0xA0] = 0xD0, [0xA1] = 0xD1, [0xA2] = 0xD2, [0xA3] = 0xD3,
+    [0xA4] = 0xD4, [0xA5] = 0xD5, [0xA6] = 0xD6, [0xA7] = 0xD7, [0xA8] = 0xD8,
+    [0xA9] = 0xD9, [0xAA] = 0xDA, [0xAB] = 0xDB, [0xAC] = 0xDC, [0xAD] = 0xDD,
+    [0xAE] = 0xDE, [0xAF] = 0xDF, [0xB0] = 0xE0, [0xB1] = 0xE1, [0xB2] = 0xE2,
+    [0xB3] = 0xE3, [0xB4] = 0xE4, [0xB5] = 0xE5, [0xB6] = 0xE6, [0xB7] = 0xE7,
+    [0xB8] = 0xE8, [0xB9] = 0xE9, [0xBA] = 0xEA, [0xBB] = 0xEB, [0xBC] = 0xEC,
+    [0xBD] = 0xED, [0xBE] = 0xEE, [0xBF] = 0xEF, [0x80] = 0xF0, [0x81] = 0xF1,
+    [0x82] = 0xF2, [0x83] = 0xF3, [0x84] = 0xF4, [0x85] = 0xF5, [0x86] = 0xF6,
+    [0x87] = 0xF7, [0x88] = 0xF8, [0x89] = 0xF9, [0x8A] = 0xFA, [0x8B] = 0xFB,
     [0x8C] = 0xFC, [0x8D] = 0xFD, [0x8E] = 0xFE, [0x8F] = 0xFF
 }
 
+-- Таблица замены символов с диакретикой
+local conversion_table_dia = {
+    ["á"] = "a", ["é"] = "e", ["í"] = "i", ["ó"] = "o", ["ú"] = "u",
+    ["Á"] = "A", ["É"] = "E", ["Í"] = "I", ["Ó"] = "O", ["Ú"] = "U",
+    ["à"] = "a", ["è"] = "e", ["ì"] = "i", ["ò"] = "o", ["ù"] = "u",
+    ["À"] = "A", ["È"] = "E", ["Ì"] = "I", ["Ò"] = "O", ["Ù"] = "U",
+    ["â"] = "a", ["ê"] = "e", ["î"] = "i", ["ô"] = "o", ["û"] = "u",
+    ["Â"] = "A", ["Ê"] = "E", ["Î"] = "I", ["Ô"] = "O", ["Û"] = "U",
+    ["ä"] = "ae", ["ë"] = "e", ["ï"] = "i", ["ö"] = "oe", ["ü"] = "ue", ["ÿ"] = "y",
+    ["Ä"] = "Ae", ["Ë"] = "E", ["Ï"] = "I", ["Ö"] = "Oe", ["Ü"] = "Ue", ["Ÿ"] = "Y",
+    ["ã"] = "a", ["ñ"] = "n", ["õ"] = "o",
+    ["Ã"] = "A", ["Ñ"] = "N", ["Õ"] = "O",
+    ["ç"] = "c", ["Ç"] = "C",
+    ["ß"] = "ss",
+}
 
 -- ==================== ОБЪЯВЛЕНИЯ ФУНКЦИЙ ====================
 -- Функции локализации
 local function lang_load(lang) end
 local function tr(key, ...) end
-local function lang_update_key_desc() end
+local function convert_encoding(str, lang) end
+local function update_key_desc() end
 local function lang_ask() end
 
 -- Функции утилиты
@@ -142,7 +186,6 @@ local function process_step3() end
 
 -- Функции вывода
 local function debug_log(msg) end
-local function convert_encoding(str) end
 local function print_line(msg) end
 local function print_error(msg) end
 local function print_action(msg) end
@@ -201,6 +244,7 @@ function lang_load(lang)
     local current_section = nil
     local found_target = false
     local found_default = false
+    local found_count = 0
     local default_section_data = {}
     
     for line in file:lines() do
@@ -231,6 +275,7 @@ function lang_load(lang)
                     
                     if found_target then
                         lang_strings[key] = value
+                        found_count = found_count + 1
                         debug_log(string.format("lang_load: [%s] %s=%s", 
                                                lang, key, value))
                     elseif found_default and current_section == LANGUAGE then
@@ -260,19 +305,11 @@ function lang_load(lang)
         end
     end
     
-    lang_update_key_desc()
+    update_key_desc()
     
-    debug_log("lang_load: end, loaded " .. 
-              table.count(lang_strings) .. " strings for language '" .. 
-              (found_target and lang or LANGUAGE) .. "'")
+    debug_log("lang_load: end, loaded " .. tostring(found_count)
+            .. " strings for language '" .. (found_target and lang or LANGUAGE) .. "'")
     return true
-end
-
--- Вспомогательная функция для подсчета элементов в таблице
-function table.count(t)
-    local count = 0
-    for _ in pairs(t) do count = count + 1 end
-    return count
 end
 
 -- Получение локализованной строки
@@ -292,8 +329,55 @@ function tr(key, ...)
     return str
 end
 
+-- Преобразование кодировки для не Qt версии эмулятора
+function convert_encoding(str, lang)
+    if qt_version then
+        return str
+    end
+    
+    if lang == nil or lang == "en" then
+        return str
+    end
+    
+    if lang == "ru" then
+        local str_len = #str
+		local bytes = {}
+		
+		for i = 1, str_len do
+			bytes[i] = 0
+		end
+		
+		local out_pos = 1
+		local i = 1
+		
+		while i <= str_len do
+			local b1 = str:byte(i)
+			
+			if (b1 == 0xD0 or b1 == 0xD1) and i < str_len then
+				local b2 = str:byte(i + 1)
+				bytes[out_pos] = conversion_table_cyr[b2] or b2
+				out_pos = out_pos + 1
+				i = i + 2
+			else
+				bytes[out_pos] = b1
+				out_pos = out_pos + 1
+				i = i + 1
+			end
+		end
+		
+		return string.char(unpack(bytes, 1, out_pos - 1))
+    end
+    
+    -- Для es, pt, de, it
+	local result = str
+    for from, to in pairs(conversion_table_dia) do
+        result = result:gsub(from, to)
+    end
+    return result
+end
+
 -- Локализация описаний действий клавиш
-function lang_update_key_desc()
+function update_key_desc()
     keys.key_1.desc_search = tr("step1_desc")
     keys.key_2.desc_search = tr("step2_desc")
     keys.key_3.desc_search = tr("step3_desc")
@@ -309,13 +393,17 @@ function lang_update_key_desc()
     keys.key_6.desc_select = tr("start_new")
 end
 
--- Функция запроса языка у пользователя
+-- Запроса языка интерфейса у пользователя
 function lang_ask()
     print_separator()
     print_line("--- LANGUAGE SELECTION ---")
     print_line("")
     print_line("  [" .. keys.key_1.value .. "] - English (en)")
-    print_line("  [" .. keys.key_2.value .. "] - Russian (ru)")
+    print_line("   [" .. keys.key_2.value .. "] - Russian (ru)")
+    print_line("    [" .. keys.key_3.value .. "] - Spanish (es)")
+    print_line("     [" .. keys.key_4.value .. "] - Portuguese (pt)")
+    print_line("      [" .. keys.key_5.value .. "] - German (de)")
+    print_line("       [" .. keys.key_6.value .. "] - Italian (it)")
     
     while LANGUAGE == nil do
         current_input = input.get()
@@ -324,12 +412,20 @@ function lang_ask()
             LANGUAGE = "en"
         elseif is_key_released(keys.key_2.value) then
             LANGUAGE = "ru"
+        elseif is_key_released(keys.key_3.value) then
+            LANGUAGE = "es"
+        elseif is_key_released(keys.key_4.value) then
+            LANGUAGE = "pt"
+        elseif is_key_released(keys.key_5.value) then
+            LANGUAGE = "de"
+        elseif is_key_released(keys.key_6.value) then
+            LANGUAGE = "it"
         end
         
-		emu_frame_advance(1)
+        emu_frame_advance(5)
     end
     print_separator()
-	return LANGUAGE
+    return LANGUAGE
 end
 
 -- ==================== ФУНКЦИИ УТИЛИТЫ ====================
@@ -464,31 +560,40 @@ function find_instructions()
         
         -- Проверяем, есть ли инструкция в таблице поиска
         if is_necessary_instruction(first_byte) then
-            -- Читаем знаковое смещение (второй байт инструкции)
-            local offset = rom_read_byte_signed(i + 1)
-            
-            -- Проверяем смещение
-            if offset ~= 0 and offset ~= -2 then
-                -- Вычисляем адрес перехода
-                local jump_addr = i + 2 + offset
-                
-                -- Проверяем, что адрес перехода находится в пределах ROM
-                if jump_addr >= start_offset and jump_addr <= rom_size - 1 then
-                    -- Проверяем, что следующая инструкция валидна
-                    local next_byte = rom_read_byte(i + 2)
-                    if is_valid_nes_instruction(next_byte) then
-                        -- Проверяем инструкцию по адресу перехода на валидность
-                        local jump_instruction = rom_read_byte(jump_addr)
-                        if is_valid_nes_instruction(jump_instruction) then
-                            -- Сохраняем инструкцию
-                            table.insert(cur_state.instructions, {
-                                [INSTR_ADDR_INDEX] = i,
-                                [INIT_VAL_INDEX] = first_byte
-                            })
-                        end
-                    end
-                end
-            end
+            -- Опкод ветвления?
+			if bit.band(first_byte, 0x1F) == 0x10 then
+				-- Читаем знаковое смещение (второй байт инструкции)
+				local offset = rom_read_byte_signed(i + 1)
+				
+				-- Проверяем смещение
+				if offset ~= 0 and offset ~= -2 then
+					-- Вычисляем адрес перехода
+					local jump_addr = i + 2 + offset
+					
+					-- Проверяем, что адрес перехода находится в пределах ROM
+					if jump_addr >= start_offset and jump_addr <= rom_size - 1 then
+						-- Проверяем, что следующая инструкция валидна
+						local next_byte = rom_read_byte(i + 2)
+						if is_valid_nes_instruction(next_byte) then
+							-- Проверяем инструкцию по адресу перехода на валидность
+							local jump_instruction = rom_read_byte(jump_addr)
+							if is_valid_nes_instruction(jump_instruction) then
+								-- Сохраняем инструкцию
+								table.insert(cur_state.instructions, {
+									[INSTR_ADDR_INDEX] = i,
+									[INIT_VAL_INDEX] = first_byte
+								})
+							end
+						end
+					end
+				end
+			else
+				-- Сохраняем остальные опкоды без проверок
+				table.insert(cur_state.instructions, {
+					[INSTR_ADDR_INDEX] = i,
+					[INIT_VAL_INDEX] = first_byte
+				})	
+			end
         end
     end
     
@@ -681,40 +786,10 @@ function debug_log(msg)
     end
 end
 
--- Преобразование кириллицы (UTF-8 -> WIN1251) для не Qt версии эмулятора
-function convert_encoding(str)
-    local str_len = #str
-    local bytes = {}
-    
-    for i = 1, str_len do
-        bytes[i] = 0
-    end
-    
-    local out_pos = 1
-    local i = 1
-    
-    while i <= str_len do
-        local b1 = str:byte(i)
-        
-        if (b1 == 0xD0 or b1 == 0xD1) and i < str_len then
-            local b2 = str:byte(i + 1)
-            bytes[out_pos] = conversion_table[b2] or b2
-            out_pos = out_pos + 1
-            i = i + 2
-        else
-            bytes[out_pos] = b1
-            out_pos = out_pos + 1
-            i = i + 1
-        end
-    end
-    
-    return string.char(unpack(bytes, 1, out_pos - 1))
-end
-
 -- Вывод строки в консоль
 function print_line(msg)
-    debug_log("  @: " .. msg)
-    emu.print((not qt_version and LANGUAGE == "ru") and convert_encoding(msg) or msg)
+    debug_log("   @: " .. msg)
+    emu.print(convert_encoding(msg, LANGUAGE))
 end
 
 -- Разделитель с движущимся процентом по шкале
@@ -958,15 +1033,12 @@ function config_save()
     end
     
     file:write("# FCEUX ROM Glitcher v" .. SCRIPT_VERSION .. " " .. tr("config_file") .. "\n\n")
-    file:write("# " .. tr("available_langs") .. ": en, ru\n")
+    file:write("# " .. tr("available_langs") .. ": en, ru, es, pt, de, it\n")
     file:write("language=" .. LANGUAGE .. "\n\n")
     local types = collect_instruction_types()
-    if #types > 0 then
-		file:write("# " .. tr("available_groups") .. ": " .. table.concat(types, ", ") .. "\n")
-    else
-        file:write("# " .. tr("available_groups_none") .. "\n")
-    end
     file:write("# " .. tr("selected_groups_desc") .. "\n")
+    file:write("# " .. tr("available_groups_list") .. ": "
+                               .. (#types > 0 and table.concat(types, ", ") or "") .. "\n")
     if next(active_instr_groups) == nil then
         file:write("instruction_groups=none\n\n")
     else
@@ -1029,10 +1101,10 @@ function config_load()
     if not success or not file then
         debug_log("FAILED config_load: not success or not file")
         
-		-- Запрос и загрузка языка интерфейса
-		lang_load(lang_ask())
+        -- Запрос и загрузка языка интерфейса
+        lang_load(lang_ask())
         
-		-- Создаем конфиг, если файл отсутствует
+        -- Создаем конфиг, если файл отсутствует
         collect_instruction_types()
         
         local found_default = false
@@ -1120,9 +1192,9 @@ function config_load()
     
     file:close()
     
-	-- Загрузка языка интерфейса
-	lang_load(LANGUAGE)
-	
+    -- Загрузка языка интерфейса
+    lang_load(LANGUAGE)
+    
     -- Инициализируем состояния клавиш
     key_states = {}
     for _, key_data in pairs(keys) do
@@ -1349,7 +1421,6 @@ function save_mod_rom()
         return false
     end
     
-    -- Генерируем имя файла
     local file_counter = 0
     local full_path
     local file_exists
@@ -1744,7 +1815,6 @@ function main_loop()
     -- Проверка на отсутствие эмуляции
     if not emu.emulating() then
         print_error(tr("error_rom_load"))
-        -- return
     else
         -- Проверка смены ROM-файла каждый N кадр
         if emu.framecount() % 60 == 0 then
@@ -1818,7 +1888,7 @@ do
         if v then valid_count = valid_count + 1 end
     end
     debug_log(string.format("Cached valid opcode: %d/256 %s", valid_count, 
-                    (valid_count == 151 and "OK" or "FAIL")))
+                    (valid_count == 151 and "OK" or "ERROR")))
 end
 
 -- Контейнер для хранения состояния игры
